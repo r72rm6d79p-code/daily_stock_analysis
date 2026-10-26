@@ -1,0 +1,17 @@
+{
+  "version": "0.1.0",
+  "max_history_candidates": 300,
+  "max_output": 12,
+  "minimum_total_score": 58.0,
+  "minimum_trade_value_twd": 20000000,
+  "weights": {
+    "fundamental": 40.0,
+    "trend_breakout": 40.0,
+    "institutional": 20.0
+  },
+  "breakout": {
+    "lookback_days": 55,
+    "near_high_pct": 3.0,
+    "minimum_volume_ratio": 1.35
+  }
+}

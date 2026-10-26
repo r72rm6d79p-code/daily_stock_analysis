@@ -1,7 +1,7 @@
 name: 每日股票分析
 
 on:
-  # 定时触发 - 每天北京时间 18:00 (UTC 10:00)
+  # 定时触发 - 每天台北/北京时间 18:00 (UTC 10:00，UTC+8 无夏令时间)
   schedule:
     - cron: '0 10 * * 1-5'     # 周一到周五，UTC 10:00 = 北京时间 18:00
   
@@ -59,6 +59,18 @@ jobs:
       - name: 创建必要目录
         run: |
           mkdir -p data logs reports
+
+      - name: 全台股林奇量化预筛
+        id: tw_lynch_screen
+        if: ${{ vars.TW_LYNCH_SCREEN_ENABLED == 'true' }}
+        env:
+          FORCE_SCREEN: ${{ github.event.inputs.force_run || 'false' }}
+        run: |
+          FORCE_ARG=""
+          if [ "$FORCE_SCREEN" = "true" ]; then
+            FORCE_ARG="--force"
+          fi
+          python scripts/tw_lynch_screen.py $FORCE_ARG --output reports/tw_lynch_screen.json
       
       - name: 执行股票分析
         env:
@@ -424,6 +436,9 @@ jobs:
           # ==========================================
           # 避免直接写入 STOCK_LIST，保留同名 Environment variables 的 runner 环境值。
           STOCK_LIST_CONFIG: ${{ vars.STOCK_LIST || secrets.STOCK_LIST }}
+          TW_LYNCH_SCREEN_ENABLED: ${{ vars.TW_LYNCH_SCREEN_ENABLED || 'false' }}
+          TW_LYNCH_SCREEN_STATUS: ${{ steps.tw_lynch_screen.outputs.status }}
+          TW_LYNCH_STOCK_LIST: ${{ steps.tw_lynch_screen.outputs.stock_list }}
           MARKET_REVIEW_REGION: ${{ vars.MARKET_REVIEW_REGION || secrets.MARKET_REVIEW_REGION || 'cn' }}
           MARKET_REVIEW_COLOR_SCHEME: ${{ vars.MARKET_REVIEW_COLOR_SCHEME || secrets.MARKET_REVIEW_COLOR_SCHEME || 'green_up' }}
           
@@ -455,7 +470,12 @@ jobs:
           # 1. Repository/Environment secrets 或 Repository variables（STOCK_LIST_CONFIG）
           # 2. 同名 Environment variables 注入的 runner 环境变量（STOCK_LIST）
           # 3. 最小默认值
-          if [ -n "${STOCK_LIST_CONFIG:-}" ]; then
+          if [ "$TW_LYNCH_SCREEN_ENABLED" = "true" ] && { [ "$TW_LYNCH_SCREEN_STATUS" != "ok" ] || [ -z "${TW_LYNCH_STOCK_LIST:-}" ]; }; then
+            echo "⏭️ 台股非交易日或没有达到门槛的候选，结束本次林奇量化任务"
+            exit 0
+          elif [ -n "${TW_LYNCH_STOCK_LIST:-}" ]; then
+            export STOCK_LIST="$TW_LYNCH_STOCK_LIST"
+          elif [ -n "${STOCK_LIST_CONFIG:-}" ]; then
             export STOCK_LIST="$STOCK_LIST_CONFIG"
           elif [ -z "${STOCK_LIST:-}" ]; then
             export STOCK_LIST="600519"
