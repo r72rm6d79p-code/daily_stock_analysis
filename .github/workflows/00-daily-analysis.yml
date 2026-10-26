@@ -481,6 +481,17 @@ jobs:
             export STOCK_LIST="600519"
           fi
 
+          # 台股林奇任务明确以 OpenAI/GPT 为 AI 摘要渠道，避免同时存在多家 Key 时误选 Gemini。
+          # 没有 OpenAI Key 时仍发送纯规则量化摘要，不让每日任务整体失败。
+          if [ "$TW_LYNCH_SCREEN_ENABLED" = "true" ]; then
+            unset GEMINI_API_KEY GEMINI_API_KEYS
+            if [ -z "${OPENAI_API_KEY:-}" ] && [ -z "${OPENAI_API_KEYS:-}" ]; then
+              echo "ℹ️ 未配置 OPENAI_API_KEY，改送純規則量化摘要"
+              python scripts/tw_lynch_screen.py --notify-existing reports/tw_lynch_screen.json
+              exit 0
+            fi
+          fi
+
           # 处理 LITELLM YAML 配置文件
           if [ -n "$LITELLM_CONFIG_YAML" ] && [ -n "$LITELLM_CONFIG" ]; then
             echo "📝 使用 GitHub Actions Secrets/Variables 中的 LITELLM_CONFIG_YAML 配置"
