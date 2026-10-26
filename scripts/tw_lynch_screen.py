@@ -288,13 +288,70 @@ def run(config: dict[str, Any], expected_date: date, force: bool = False) -> dic
     }
 
 
+def format_telegram_report(report: dict[str, Any]) -> str:
+    """Build a deterministic fallback report without calling an LLM."""
+    status = report.get("status")
+    if status != "ok":
+        return f"台股林奇量化篩選：{status or 'unknown'}"
+
+    coverage = report.get("coverage") or {}
+    lines = [
+        f"台股林奇量化篩選｜{report.get('trade_date', '-')}",
+        (
+            f"全市場 {coverage.get('universe', 0)} 檔，"
+            f"日線覆蓋 {coverage.get('history_received', 0)}/"
+            f"{coverage.get('history_requested', 0)}，"
+            f"入選 {coverage.get('selected', 0)} 檔"
+        ),
+        "",
+    ]
+    for index, item in enumerate(report.get("selected") or [], start=1):
+        technical = item.get("technical") or {}
+        lines.extend(
+            [
+                f"{index}. {item.get('code', '')} {item.get('name', '')}｜總分 {item.get('total_score', 0):g}",
+                (
+                    f"基本面 {item.get('fundamental_score', 0):g}／"
+                    f"趨勢突破 {item.get('trend_breakout_score', 0):g}／"
+                    f"籌碼 {item.get('institutional_score', 0):g}；"
+                    f"20日漲幅 {technical.get('return_20d_pct', 0):g}%"
+                ),
+            ]
+        )
+    lines.extend(["", "純規則摘要；AI 未啟用或暫時不可用。僅供研究，不構成投資建議。"])
+    return "\n".join(lines)
+
+
+def send_telegram_report(report: dict[str, Any], token: str, chat_id: str) -> None:
+    """Send the non-LLM fallback while keeping credentials out of logs/reports."""
+    if not token or not chat_id:
+        raise ValueError("TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID are required")
+    text = format_telegram_report(report)
+    response = requests.post(
+        f"https://api.telegram.org/bot{token}/sendMessage",
+        json={"chat_id": chat_id, "text": text},
+        timeout=25,
+    )
+    response.raise_for_status()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     parser.add_argument("--date", type=date.fromisoformat, default=date.today())
     parser.add_argument("--output", type=Path, default=Path("reports/tw_lynch_screen.json"))
     parser.add_argument("--force", action="store_true")
+    parser.add_argument("--notify-existing", type=Path, help="Send an existing JSON report without using an LLM")
     args = parser.parse_args()
+    if args.notify_existing:
+        report = json.loads(args.notify_existing.read_text(encoding="utf-8"))
+        send_telegram_report(
+            report,
+            os.getenv("TELEGRAM_BOT_TOKEN", ""),
+            os.getenv("TELEGRAM_CHAT_ID", ""),
+        )
+        print(json.dumps({"status": "fallback_notification_sent"}))
+        return 0
     config = json.loads(args.config.read_text(encoding="utf-8"))
     report = run(config, args.date, force=args.force)
     args.output.parent.mkdir(parents=True, exist_ok=True)
