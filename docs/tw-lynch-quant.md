@@ -30,7 +30,11 @@ GitHub Actions cron 預設使用 UTC；台北 18:00 是 `0 10 * * 1-5`。工作�
 
 GitHub-hosted job 最長 360 分鐘；原工作流預設 `ANALYSIS_TIMEOUT_MINUTES=30`。啟用本功能後建議將 Repository variable 調為 `90`，同時維持有界第二階段。不可把約 1,800–2,000 檔全部送入逐檔 LLM 分析。
 
-部署時在 Repository variables 設定 `TW_LYNCH_SCREEN_ENABLED=true`；不設定或设为 `false` 時，原本的 `STOCK_LIST`、排程與所有通知行為完全不變。Telegram 的 `TELEGRAM_BOT_TOKEN`、`TELEGRAM_CHAT_ID` 以及任一 LLM 金鑰放在 Repository Secrets。Actions 先執行預篩，若為休市或沒有候選就結束；有候選才把產出的 `stock_list` 交給既有 `main.py`，沿用原 Telegram 發送器。
+部署時在 Repository variables 設定 `TW_LYNCH_SCREEN_ENABLED=true`；不設定或設為 `false` 時，原本的 `STOCK_LIST`、排程與所有通知行為完全不變。Telegram 的 `TELEGRAM_BOT_TOKEN`、`TELEGRAM_CHAT_ID` 放在 Repository Secrets。
+
+此任務的 AI 摘要固定使用 OpenAI/GPT：把 `OPENAI_API_KEY` 放在 Repository Secrets，並可用 Repository variable `OPENAI_MODEL` 選擇帳戶可用模型。台股任務執行時會忽略 Gemini 金鑰，但不會刪除或改動它，因此其他原有任務仍可照常使用 Gemini。若沒有 OpenAI 金鑰，篩選仍會完成，並直接傳送含分數、入選理由與覆蓋率的純規則 Telegram 摘要。
+
+Actions 先執行預篩，若為休市或沒有候選就結束；有候選且 OpenAI 可用時，才把產出的 `stock_list` 交給既有 `main.py` 深度分析與 Telegram 發送器。
 
 ## 本地驗證
 

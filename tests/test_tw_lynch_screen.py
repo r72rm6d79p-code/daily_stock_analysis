@@ -1,4 +1,10 @@
-from scripts.tw_lynch_screen import fundamental_score, institutional_score, roc_to_iso, trend_score
+from scripts.tw_lynch_screen import (
+    format_telegram_report,
+    fundamental_score,
+    institutional_score,
+    roc_to_iso,
+    trend_score,
+)
 
 
 def test_roc_to_iso():
@@ -24,3 +30,22 @@ def test_institutional_score_uses_share_volume_ratio():
     assert institutional_score(100_000, 1_000_000) == 20.0
     assert institutional_score(-1, 1_000_000) == 0.0
     assert institutional_score(None, 1_000_000) == 0.0
+
+
+def test_format_telegram_report_is_deterministic_without_llm():
+    report = {
+        "status": "ok",
+        "trade_date": "2026-10-26",
+        "coverage": {"universe": 1900, "history_requested": 300, "history_received": 288, "selected": 1},
+        "selected": [{
+            "code": "2330", "name": "台積電", "total_score": 78,
+            "fundamental_score": 32, "trend_breakout_score": 31,
+            "institutional_score": 15, "technical": {"return_20d_pct": 8.5},
+        }],
+    }
+
+    text = format_telegram_report(report)
+
+    assert "全市場 1900 檔" in text
+    assert "2330 台積電｜總分 78" in text
+    assert "純規則摘要" in text
