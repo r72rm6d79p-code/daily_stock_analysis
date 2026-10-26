@@ -1,0 +1,43 @@
+name: Telegram Chat ID Helper
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  find-chat-id:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Read latest Telegram chat ID
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import urllib.request
+
+          token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+          if not token:
+              raise SystemExit("TELEGRAM_BOT_TOKEN is not configured")
+          url = f"https://api.telegram.org/bot{token}/getUpdates?offset=-1"
+          with urllib.request.urlopen(url, timeout=20) as response:
+              payload = json.load(response)
+          updates = payload.get("result") or []
+          if not updates:
+              raise SystemExit("No Telegram message found. Open the bot, press Start, and send a message.")
+          update = updates[-1]
+          message = (
+              update.get("message")
+              or update.get("edited_message")
+              or update.get("channel_post")
+              or {}
+          )
+          chat = message.get("chat") or (update.get("my_chat_member") or {}).get("chat") or {}
+          chat_id = chat.get("id")
+          if chat_id is None:
+              raise SystemExit("Latest update has no chat.id; send the bot a normal text message and rerun.")
+          print(f"::notice title=TELEGRAM_CHAT_ID::{chat_id}")
+          PY
