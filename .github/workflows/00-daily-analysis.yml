@@ -1,9 +1,10 @@
 name: 每日股票分析
 
 on:
-  # 定时触发 - 每天台北/北京时间 18:00 (UTC 10:00，UTC+8 无夏令时间)
+  # 每天 18:00 检查；工作内以固定锚点确保严格每 3 个日历日才运行一次。
+  # 若命中休市日，既有交易日检查仍会阻止分析与通知。
   schedule:
-    - cron: '0 10 * * 1-5'     # 周一到周五，UTC 10:00 = 北京时间 18:00
+    - cron: '0 10 * * *'       # UTC 10:00 = 台北时间 18:00（UTC+8 无夏令时间）
   
   # 手动触发
   workflow_dispatch:
@@ -38,31 +39,56 @@ jobs:
     timeout-minutes: ${{ fromJSON(vars.ANALYSIS_TIMEOUT_MINUTES || '30') }}
     
     steps:
+      - name: 每三天排程检查
+        id: cadence
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" != "schedule" ]; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+            echo "✅ 手动触发，不套用三天间隔"
+            exit 0
+          fi
+
+          today_days=$(( $(date -u +%s) / 86400 ))
+          anchor_days=$(( $(date -u -d '2026-10-27' +%s) / 86400 ))
+          if [ $(( (today_days - anchor_days) % 3 )) -eq 0 ]; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+            echo "✅ 今天是每三天执行日"
+          else
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+            echo "⏭️ 尚未达到三天间隔，本次不分析也不发送通知"
+          fi
+
       - name: 随机延迟（避免固定时间访问）
+        if: steps.cadence.outputs.should_run == 'true'
         run: sleep $((RANDOM % 60))  # 随机延迟0-60秒启动
       
       - name: 检出代码
+        if: steps.cadence.outputs.should_run == 'true'
         uses: actions/checkout@v5
       
       - name: 设置 Python 环境
+        if: steps.cadence.outputs.should_run == 'true'
         uses: actions/setup-python@v6
         with:
           python-version: '3.11'
           cache: 'pip'
       
       - name: 安装依赖
+        if: steps.cadence.outputs.should_run == 'true'
         run: |
           pip install --upgrade pip
           pip install -r requirements.txt
           python -c "import futu; print('✅ futu SDK import OK')"
       
       - name: 创建必要目录
+        if: steps.cadence.outputs.should_run == 'true'
         run: |
           mkdir -p data logs reports
 
       - name: 全台股林奇量化预筛
         id: tw_lynch_screen
-        if: ${{ vars.TW_LYNCH_SCREEN_ENABLED == 'true' }}
+        if: ${{ steps.cadence.outputs.should_run == 'true' && vars.TW_LYNCH_SCREEN_ENABLED == 'true' }}
         env:
           FORCE_SCREEN: ${{ github.event.inputs.force_run || 'false' }}
         run: |
@@ -73,6 +99,7 @@ jobs:
           python scripts/tw_lynch_screen.py $FORCE_ARG --output reports/tw_lynch_screen.json
       
       - name: 执行股票分析
+        if: steps.cadence.outputs.should_run == 'true'
         env:
           # ==========================================
           # AI 配置
@@ -593,7 +620,7 @@ jobs:
       
       - name: 上传分析报告
         uses: actions/upload-artifact@v6
-        if: always()
+        if: ${{ always() && steps.cadence.outputs.should_run == 'true' }}
         with:
           name: analysis-reports-${{ github.run_number }}
           path: |
@@ -602,7 +629,7 @@ jobs:
           retention-days: 30
       
       - name: 显示运行结果
-        if: always()
+        if: ${{ always() && steps.cadence.outputs.should_run == 'true' }}
         run: |
           echo ""
           echo "=========================================="
