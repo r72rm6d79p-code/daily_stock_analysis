@@ -7,6 +7,7 @@ Telegram 发送提醒服务
 2. 通过 Telegram Bot API 发送 图片消息
 """
 import logging
+import os
 from typing import Optional
 import requests
 import time
@@ -17,6 +18,27 @@ from src.formatters import _custom_unit_to_index, strip_hidden_markdown_metadata
 
 
 logger = logging.getLogger(__name__)
+
+
+def _localize_telegram_content(content: str) -> str:
+    """Convert Chinese Telegram output to Taiwan Traditional when requested.
+
+    The upstream report-language layer intentionally normalizes ``zh-TW`` to
+    ``zh`` and therefore renders Simplified Chinese labels.  Keep that existing
+    behavior intact for every other channel, but honor the original environment
+    value at the final Telegram boundary.
+    """
+    language = os.getenv("REPORT_LANGUAGE", "").strip().lower().replace("_", "-")
+    if language not in {"zh-tw", "zh-hant", "traditional", "traditional-chinese"}:
+        return content
+
+    try:
+        from opencc import OpenCC
+
+        return OpenCC("s2twp").convert(content)
+    except Exception as exc:  # pragma: no cover - defensive fallback in production
+        logger.warning("繁體中文轉換失敗，沿用原始 Telegram 內容: %s", exc)
+        return content
 
 
 class TelegramSender:
@@ -85,7 +107,9 @@ class TelegramSender:
             # Telegram 消息最大长度 4096（按 UTF-16 code unit 计）
             max_length = 4096
 
-            sanitized_content = strip_hidden_markdown_metadata(content).strip()
+            sanitized_content = _localize_telegram_content(
+                strip_hidden_markdown_metadata(content).strip()
+            )
             if not sanitized_content:
                 logger.warning("Telegram 消息内容为空，跳过推送")
                 return False
