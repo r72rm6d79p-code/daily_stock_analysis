@@ -1869,6 +1869,33 @@ class TestTelegramSender(unittest.TestCase):
         self.assertIn("sendMessage", mock_post.call_args[0][0])
 
     @mock.patch("src.notification_sender.telegram_sender.requests.post")
+    def test_send_converts_zh_tw_content_to_taiwan_traditional(self, mock_post):
+        mock_post.return_value = _response(200, {"ok": True})
+        cfg = _config(telegram_bot_token="BOT", telegram_chat_id="CHAT")
+        sender = TelegramSender(cfg)
+
+        with mock.patch.dict(os.environ, {"REPORT_LANGUAGE": "zh-TW"}):
+            result = sender.send_to_telegram("市场趋势与软件分析")
+
+        self.assertTrue(result)
+        payload = mock_post.call_args.kwargs["json"]
+        self.assertIn("市場趨勢", payload["text"])
+        self.assertIn("軟體分析", payload["text"])
+
+    @mock.patch("src.notification_sender.telegram_sender.requests.post")
+    def test_send_keeps_simplified_content_for_plain_zh(self, mock_post):
+        mock_post.return_value = _response(200, {"ok": True})
+        cfg = _config(telegram_bot_token="BOT", telegram_chat_id="CHAT")
+        sender = TelegramSender(cfg)
+
+        with mock.patch.dict(os.environ, {"REPORT_LANGUAGE": "zh"}):
+            result = sender.send_to_telegram("市场趋势")
+
+        self.assertTrue(result)
+        payload = mock_post.call_args.kwargs["json"]
+        self.assertIn("市场趋势", payload["text"])
+
+    @mock.patch("src.notification_sender.telegram_sender.requests.post")
     def test_send_retries_plain_text_when_markdown_http_400(self, mock_post):
         markdown_error = _response(400)
         markdown_error.text = (
